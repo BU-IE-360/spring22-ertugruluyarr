@@ -1,0 +1,209 @@
+---
+title: "IE360-HW2"
+output: html_document
+---
+
+### IE360 Homework 2
+## Ertuğrul Uyar  - 2018402063
+
+The aim of the second homework is to forecast the quarterly sales of UGS of 2007.
+
+Installing and calling required packages:
+```{r}
+library(xlsx)
+library(lubridate)
+library(zoo)
+library(forecast)
+library(dplyr)
+library(readxl)
+library(data.table)
+library(ggplot2)
+library(RcppRoll)
+library(GGally)
+library(skimr)
+
+```
+
+Turning the raw data into analysable data:
+```{r}
+salesdata=data.table(read.csv("/Users/ertugruluyar/Documents/R /IE360_Spring22_HW2_data.csv",colClasses=c("character", rep("numeric",10))))
+colnames(salesdata) <- c("Quarters", "UGS", "RNUV","NLPG","PU","PG","NUGV","NDGV","GNPA","GNPC","GNPT")
+salesdata$Quarters <- as.yearqtr(salesdata$Quarters, format = "%Y_Q%q")
+str(salesdata)
+```
+
+#1
+
+Time series of UGS:
+```{r}
+ggplot(salesdata, aes(x=Quarters, y=UGS, group=1)) + 
+  geom_line()+
+  geom_point()+
+  ggtitle('Unleaded Gasoline Sales Time Series Plot')
+```
+As it can be seen, there is a declining trend over the years. In addition, we can see seasonality in such a way that every third quarter has the largest value for thr corresponding year, between almost every 1st and 3rd quarters there is an increase and between every 3rd and 1st quarters there is a decrease.
+
+
+Mean Series:
+```{r}
+meanUGS=roll_mean(salesdata$UGS,4,align='left')
+plot(meanUGS,
+     type='l',col='magenta',
+     xlab = "Quarter",
+     ylab = "Mean",
+     main = "Mean series")
+```
+In terms of mean, as it can be obviously seen from mean series of UGS graph above, observed data is not stationary since there is an obvious trend in the graph.
+
+
+Variance Series:
+```{r}
+varUGS=roll_var(salesdata$UGS,4,align='left')
+plot(varUGS,
+     type='l',col='green',
+     xlab = "Quarter",
+     ylab = "Variance",
+     main = "Variance series")
+```
+Unlike mean series, we cannot deduce stationarity-based observation from variance series of UGS graph above.
+
+#2
+
+Autocorrelation function of the time series of UGS:
+```{r}
+acf(salesdata$UGS,na.action = na.pass,lag.max = 12)
+```
+By looking at the autocorrelation graph, we can get insigths about whether there is trend and/or seasonality in the data. In that sense, having a high autocorrelation for lag 1 indicates that there can be a trend in the data. On the other hand, having  high autocorrelations for lag 4,8 can imply the seasonality, which makes sense since 4 quarters means a year and yearly seasonality is quite reasonable.
+
+#3
+
+Defining trend & lag1 and seasonality & lag4 variables:
+```{r}
+salesdata <- salesdata[, trend:=(1:.N)]
+salesdata <- salesdata[,Lag1:=c(NA, salesdata$UGS[1:31])]
+
+salesdata <- salesdata[,seasonality:=(1:.N)%%4]
+salesdata <- salesdata[seasonality==0,seasonality:=4]
+salesdata <- salesdata[,Lag4:=c(rep(NA,4),salesdata$UGS[1:28])]
+
+str(salesdata)
+```
+
+#4
+
+Pairwise correlations of the variables:
+```{r}
+ggpairs(salesdata[,2:15])
+```
+In order to build models, it makes sense to examine the importance of the coefficients based on their dul correlations. By doing that, it can be seen that UGS is correlated with GNPA, NUGV and NLPG the most. PU, PG and NDGV are also correlated with UGS but not that strong compared to former ones. Therefore, I selected to analyse GNPA, NUGV, NDGV, PG, PU along with trend and seasonality components.
+
+GNPA is added and analysed:
+```{r}
+GNPAadded <- lm(UGS~GNPA, salesdata)  
+summary(GNPAadded)
+```
+Since GNPA is the most correlated with UGS, it is significant and added to model. Its corresponding adjusted r-squared value is 0.3208, which is the portion of the variance explained by using GNPA.
+
+NUGV is added and analysed:
+```{r}
+GNPA_NUGVadded <- lm(UGS~GNPA+NUGV, salesdata)  
+summary(GNPA_NUGVadded)
+```
+Since adjusted r-squared value increased significantly, NUGV is an important regressor and added to the model.
+
+NDGV is added and analysed:
+```{r}
+GNPA_NUGV_NDGVadded <- lm(UGS~GNPA+NUGV+NDGV, salesdata)  
+summary(GNPA_NUGV_NDGVadded)
+
+```
+Although adjusted r-squared value increased slightly, p-value decreased and NUGV can be said to be an important regressor and added to the model.
+
+
+PG is added and analysed:
+```{r}
+GNPA_NUGV_NDGV_PGadded <- lm(UGS~GNPA+NUGV+NDGV+PG, salesdata)  
+summary(GNPA_NUGV_NDGV_PGadded)
+```
+Since there is no significant increase in adjusted r-squared and decrease in p-value, PG can be neglected as a regressor.
+
+PU is added and analysed:
+```{r}
+GNPA_NUGV_NDGV_PUadded <- lm(UGS~GNPA+NUGV+NDGV+PU, salesdata)  
+summary(GNPA_NUGV_NDGV_PUadded)
+```
+Since there is no significant increase in adjusted r-squared and decrease in p-value, Pu can be neglected as a regressor.
+
+Trend and seasonality variables are combined and analysed:
+```{r}
+TrSeasAdded <- lm(UGS ~ trend+seasonality, salesdata)
+summary(TrSeasAdded)
+```
+Having high adjusted r-squared and small p-value, trend and seasonality variables are good to be added to the model as regressors.
+
+Chosen coloumn regressors and trend & seasonality regressors are added and analysed:
+```{r}
+Reg_Tr_Seas_Added <- lm(UGS ~ GNPA+NUGV+NDGV+trend+seasonality, salesdata)
+summary(Reg_Tr_Seas_Added)
+```
+Combination of these regressors gave a good result in terms of adjusted r-squared and p-value; therefore, it is resonable to use them as combined.
+
+Log1 is added and analysed:
+```{r}
+Reg_Tr_Seas_Lag1_Added <- lm(UGS ~ GNPA+NUGV+NDGV+trend+seasonality+Lag1, salesdata)
+summary(Reg_Tr_Seas_Lag1_Added)
+```
+Lag1 increased the adjusted r-squared value significantly and decreased p-value, meaning that it shoul be added to the model.
+
+Lag4 is added and analysed:
+```{r}
+Reg_Tr_Seas_Lags_Added <- lm(UGS ~ GNPA+NUGV+NDGV+trend+seasonality+Lag1+Lag4, salesdata)
+summary(Reg_Tr_Seas_Lags_Added)
+```
+Lag4 decreased the adjusted r-squared value and increased the p-value: therefore, it should not be added to the model as a regressor.
+
+The best model among those tried models are the one with GNPA + NUGV + NDGV + trend + seasonality + Lag1.
+```{r}
+finalmodel<- Reg_Tr_Seas_Lag1_Added
+summary(finalmodel)
+```
+
+
+#5
+
+Validity of our model in term of coefficient significancy is given for each models. It is time to examine residual behaviour.
+```{r}
+checkresiduals(finalmodel)
+```
+As it can be seen, residuals have negligible amount of autocorrelation and they seem to be normally distributed enough to be OK with that model.
+
+Predicting the 2007 quarterly UGS sales:
+```{r}
+to_be_predicted <- salesdata[29:32,c("GNPA","NUGV","NDGV","trend","seasonality","Lag1")]
+prediction = c(0,0,0,0)
+
+prediction[1] = predict(finalmodel,newdata = to_be_predicted[1,])
+to_be_predicted[2,"Lag1"] = prediction[1]
+prediction[2] = predict(finalmodel,newdata = to_be_predicted[2,])
+to_be_predicted[3,"Lag1"] = prediction[2]
+prediction[3] = predict(finalmodel,newdata = to_be_predicted[3,])
+to_be_predicted[4,"Lag1"] = prediction[3]
+prediction[4] = predict(finalmodel,newdata = to_be_predicted[4,])
+prediction
+```
+Forecasted values for;
+Q1:652169.8
+Q2:822457.0
+Q3:958566.2
+Q4:768598.7
+
+Real values and predicted values comparison graph:
+```{r}
+finaldata=copy(salesdata)
+finaldata$actual=salesdata$UGS
+finaldata$predicted=predict(finalmodel,finaldata)
+ggplot(finaldata ,aes(x=Quarters))+
+  geom_line(aes(y=actual,color='real')) + 
+  geom_line(aes(y=predicted,color='predicted'))
+```
+
